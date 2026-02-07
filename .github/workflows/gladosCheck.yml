@@ -25,7 +25,7 @@ jobs:
 
       - name: Run GLaDOS Check-in
         env:
-          GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
+          GLADOS_COOKIES: ${{ secrets.GLADOS }}
           WECHAT_NOTIFY: ${{ secrets.WECHAT_NOTIFY }}
-          GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
+          #GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
         run: python checkin.py
