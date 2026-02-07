@@ -66,9 +66,10 @@ def load_config() -> Tuple[str, List[str], str]:
     raw_cookies_env = os.environ.get(ENV_COOKIES)
     exchange_plan_env = os.environ.get(ENV_EXCHANGE_PLAN, "plan500")
 
+    # 如果没有设置 GLADOS_COOKIES
     if not raw_cookies_env:
         raise ValueError("未设置 GLADOS_COOKIES")
-
+    
     cookies_list = [c.strip() for c in raw_cookies_env.split('&') if c.strip()]
 
     if exchange_plan_env not in EXCHANGE_POINTS:
@@ -164,9 +165,15 @@ def format_push(results):
 def main():
 
     try:
+        # 加载配置
         sendkey, cookies, plan = load_config()
         results=[]
 
+        # 如果没有读取到有效的 cookies 列表，抛出异常
+        if not cookies:
+            raise ValueError("未设置有效的 GLADOS_COOKIES")
+
+        # 遍历所有的 cookie 进行签到处理
         for c in cookies:
             s,p,d,tp,e = checkin_and_process(c,plan)
             results.append({
@@ -177,17 +184,23 @@ def main():
                 "exchange":e
             })
 
+        # 格式化推送内容
         title,content = format_push(results)
 
     except Exception as e:
         title="脚本运行异常"
         content=str(e)
 
-    print(title)
-    print(content)
+    # 输出日志
+    logger.info(f"推送标题: {title}")
+    logger.info(f"推送内容:\n{content}")
 
+    # 检查是否设置了 sendkey，如果设置了，发送推送
     if sendkey:
-        send_ftqq(sendkey,title,content)
+        send_ftqq(sendkey, title, content)
+    else:
+        logger.warning("未设置 'WECHAT_NOTIFY'，跳过推送。")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
+
