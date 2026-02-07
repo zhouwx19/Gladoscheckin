@@ -42,7 +42,7 @@ jobs:
       env:
         # env获取
         ENV_PUSH_KEY: ${{ secrets.WECHAT_NOTIFY }}
-        GLADOS_COOKIES: ${{ secrets.GLADOS}}
+        ENV_COOKIES: ${{ secrets.GLADOS}}
         #GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
 
     - name: keep alive
