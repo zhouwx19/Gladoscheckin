@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # ---------------- 环境变量 ----------------
 ENV_PUSH_KEY = "WECHAT_NOTIFY"      # 方糖 SendKey
-ENV_COOKIES = "GLADOS"
+ENV_COOKIES = "GLADOS_COOKIES"
 ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
 
 # ---------------- API ----------------
@@ -66,10 +66,10 @@ def load_config() -> Tuple[str, List[str], str]:
     raw_cookies_env = os.environ.get(ENV_COOKIES)
     exchange_plan_env = os.environ.get(ENV_EXCHANGE_PLAN, "plan500")
 
-    # 如果没有设置 GLADOS_COOKIES
+    # 如果没有设置 GLADOS_COOKIES，抛出异常
     if not raw_cookies_env:
         raise ValueError("未设置 GLADOS_COOKIES")
-    
+
     cookies_list = [c.strip() for c in raw_cookies_env.split('&') if c.strip()]
 
     if exchange_plan_env not in EXCHANGE_POINTS:
@@ -165,7 +165,6 @@ def format_push(results):
 def main():
 
     try:
-        # 加载配置
         sendkey, cookies, plan = load_config()
         results=[]
 
@@ -175,21 +174,21 @@ def main():
 
         # 遍历所有的 cookie 进行签到处理
         for c in cookies:
-            s,p,d,tp,e = checkin_and_process(c,plan)
+            s, p, d, tp, e = checkin_and_process(c, plan)
             results.append({
-                "status":s,
-                "points":p,
-                "days":d,
-                "points_total":tp,
-                "exchange":e
+                "status": s,
+                "points": p,
+                "days": d,
+                "points_total": tp,
+                "exchange": e
             })
 
         # 格式化推送内容
-        title,content = format_push(results)
+        title, content = format_push(results)
 
     except Exception as e:
-        title="脚本运行异常"
-        content=str(e)
+        title = "脚本运行异常"
+        content = str(e)
 
     # 输出日志
     logger.info(f"推送标题: {title}")
@@ -203,4 +202,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
