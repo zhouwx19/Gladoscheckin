@@ -1,4 +1,4 @@
-name: GLaDOS Check-in
+name: auto Check-in
 
 on:
   schedule:
