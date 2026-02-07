@@ -1,59 +1,31 @@
-name: auto check
+name: GLaDOS Check-in
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'README.md'
-      - 'imgs/'
   schedule:
-    - cron: '25 12 * * *'
-  watch:
-    types: started
+    - cron: '30 12 * * *'  # 每天 16:10 UTC（北京时间 00:10）
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: glados checkin
+  checkin:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.8]
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: set up python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.8'
 
-    # 安装 python 库
-    - name: install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests
-        pip install pypushdeer
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
-    # 执行 签到脚本
-    - name: running checkin
-      run: |
-        python checkin.py
-      env:
-        # env获取
-        ENV_PUSH_KEY: ${{ secrets.WECHAT_NOTIFY }}
-        ENV_COOKIES: ${{ secrets.GLADOS}}
-        #GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
-
-    - name: keep alive
-      uses: liskin/gh-workflow-keepalive@v1 # using the workflow with default settings
-      
-    - name: delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2
-      with:
-        token: ${{ github.token }}
-        repository: ${{ github.repository }}
-        retain_days: 7
-        keep_minimum_runs: 10
-        delete_run_by_conclusion_pattern: success
- 
+      - name: Run GLaDOS Check-in
+        env:
+          GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
+          WECHAT_NOTIFY: ${{ secrets.WECHAT_NOTIFY }}
+          GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
+        run: python checkin.py
