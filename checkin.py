@@ -45,19 +45,23 @@ EXCHANGE_POINTS = {"plan100": 100, "plan200": 200, "plan500": 500}
 
 # ---------------- 方糖推送 ----------------
 def send_ftqq(sendkey: str, title: str, desp: str):
-    url = f"https://sct.ftqq.com/{sendkey}.send"
-    data = {
+    url = f"https://sctapi.ftqq.com/{sendkey}.send"
+    params = {
         "title": title,
-        "desp": desp
+        "desp": desp,
+        "channel": "9",  # 方糖服务号
+        "noip": "1"  # 隐藏调用 IP
     }
+
     try:
-        r = requests.post(url, data=data, timeout=10)
+        # 使用 GET 请求发送
+        r = requests.get(url, params=params, timeout=10)
         if r.status_code == 200:
-            logger.info("方糖推送成功")
+            print("方糖推送成功")
         else:
-            logger.error(f"方糖推送失败: {r.text}")
+            print(f"方糖推送失败: {r.text}")
     except Exception as e:
-        logger.error(f"方糖推送异常: {e}")
+        print(f"方糖推送异常: {e}")
 
 # ---------------- 读取配置 ----------------
 def load_config() -> Tuple[str, List[str], str]:
@@ -202,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
