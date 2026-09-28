@@ -1,209 +1,578 @@
-import requests
-import json
 import os
-import logging
-import datetime
-from typing import Dict, List, Optional, Tuple
+import sys
+import requests
+from datetime import datetime, timezone, timedelta
 
-# ---------------- 时间转北京时间 ----------------
-def beijing_time_converter(timestamp):
-    utc_dt = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
-    beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
-    beijing_dt = utc_dt.astimezone(beijing_tz)
-    return beijing_dt.timetuple()
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ============================================================
+# Configuration
+# ============================================================
 
-root_logger = logging.getLogger()
-for handler in root_logger.handlers:
-    if hasattr(handler, 'formatter') and handler.formatter is not None:
-        handler.formatter.converter = beijing_time_converter
+DOMAIN = "glados.cloud"
 
-logger = logging.getLogger(__name__)
+BASE_URL = f"https://{DOMAIN}"
 
-# ---------------- 环境变量 ----------------
-ENV_PUSH_KEY = "WECHAT_NOTIFY"      # 方糖 SendKey
-ENV_COOKIES = "GLADOS_COOKIES"
-ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
+CHECKIN_URL = f"{BASE_URL}/api/user/checkin"
+STATUS_URL = f"{BASE_URL}/api/user/status"
+POINTS_URL = f"{BASE_URL}/api/user/points"
 
-# ---------------- API ----------------
-CHECKIN_URL = "https://glados.cloud/api/user/checkin"
-STATUS_URL = "https://glados.cloud/api/user/status"
-POINTS_URL = "https://glados.cloud/api/user/points"
-EXCHANGE_URL = "https://glados.cloud/api/user/exchange"
-
-CHECKIN_DATA = {"token": "glados.cloud"} 
-
-HEADERS_TEMPLATE = {
-    'referer': 'https://glados.cloud/console/checkin',
-    'origin': "https://glados.cloud",
-    'user-agent': "Mozilla/5.0",
-    'content-type': 'application/json;charset=UTF-8'
+HEADERS = {
+    "Origin": BASE_URL,
+    "Referer": f"{BASE_URL}/console/checkin",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/152.0.0.0 Safari/537.36"
+    ),
+    "Content-Type": "application/json;charset=UTF-8",
+    "Accept": "application/json, text/plain, */*",
 }
 
-EXCHANGE_POINTS = {"plan100": 100, "plan200": 200, "plan500": 500}
+CHECKIN_DATA = {
+    "token": DOMAIN
+}
 
-# ---------------- 方糖推送 ----------------
-def send_ftqq(sendkey: str, title: str, desp: str):
-    url = f"https://sctapi.ftqq.com/{sendkey}.send"
-    params = {
-        "title": title,
-        "desp": desp,
-        "channel": "9",  # 方糖服务号
-        "noip": "1"  # 隐藏调用 IP
-    }
 
-    try:
-        # 使用 GET 请求发送
-        r = requests.get(url, params=params, timeout=10)
-        if r.status_code == 200:
-            print("方糖推送成功")
-        else:
-            print(f"方糖推送失败: {r.text}")
-    except Exception as e:
-        print(f"方糖推送异常: {e}")
+# ============================================================
+# HTTP
+# ============================================================
 
-# ---------------- 读取配置 ----------------
-def load_config() -> Tuple[str, List[str], str]:
-
-    push_key = os.environ.get(ENV_PUSH_KEY, "")
-    raw_cookies_env = os.environ.get(ENV_COOKIES)
-    exchange_plan_env = os.environ.get(ENV_EXCHANGE_PLAN, "plan500")
-
-    # 如果没有设置 GLADOS_COOKIES，抛出异常
-    if not raw_cookies_env:
-        raise ValueError("未设置 GLADOS_COOKIES")
-
-    cookies_list = [c.strip() for c in raw_cookies_env.split('&') if c.strip()]
-
-    if exchange_plan_env not in EXCHANGE_POINTS:
-        exchange_plan_env = "plan500"
-
-    logger.info(f"加载账号数: {len(cookies_list)}")
-    return push_key, cookies_list, exchange_plan_env
-
-# ---------------- 请求封装 ----------------
-def make_request(url: str, method: str, headers: Dict[str,str], data=None, cookies=""):
-
-    h = headers.copy()
-    h["cookie"] = cookies
+def request(session, method, url, **kwargs):
 
     try:
-        if method == "POST":
-            r = requests.post(url, headers=h, data=json.dumps(data))
-        else:
-            r = requests.get(url, headers=h)
-
-        if r.ok:
-            return r
-        return None
-    except Exception as e:
-        logger.error(f"请求异常: {e}")
-        return None
-
-# ---------------- 单账号处理 ----------------
-def checkin_and_process(cookie, exchange_plan):
-
-    status = "失败"
-    points = "0"
-    days = "未知"
-    total_points = "未知"
-    exchange = "未兑换"
-
-    r = make_request(CHECKIN_URL, "POST", HEADERS_TEMPLATE, CHECKIN_DATA, cookie)
-
-    if r:
-        j = r.json()
-        msg = j.get("message","")
-        points = str(j.get("points",0))
-
-        if "Got" in msg:
-            status = "签到成功"
-        elif "Repeats" in msg:
-            status = "重复签到"
-        else:
-            status = f"失败:{msg}"
-
-    r = make_request(STATUS_URL,"GET",HEADERS_TEMPLATE,cookies=cookie)
-    if r:
-        days = str(int(float(r.json()["data"]["leftDays"])))+"天"
-
-    r = make_request(POINTS_URL,"GET",HEADERS_TEMPLATE,cookies=cookie)
-    if r:
-        total_points = str(int(float(r.json()["points"])))
-
-    need = EXCHANGE_POINTS[exchange_plan]
-    try:
-        if int(total_points) >= need:
-            r = make_request(EXCHANGE_URL,"POST",HEADERS_TEMPLATE,
-                             {"planType":exchange_plan},cookie)
-            if r and r.json().get("code")==0:
-                exchange="兑换成功"
-            else:
-                exchange="兑换失败"
-        else:
-            exchange="积分不足"
-    except:
-        pass
-
-    return status, points, days, total_points, exchange
-
-# ---------------- 结果格式化 ----------------
-def format_push(results):
-
-    ok = sum("成功" in r["status"] for r in results)
-    rep = sum("重复" in r["status"] for r in results)
-    fail = len(results)-ok-rep
-
-    title = f"GLaDOS签到 成功{ok} 失败{fail} 重复{rep}"
-
-    lines=[]
-    for i,r in enumerate(results,1):
-        lines.append(
-            f"账号{i}: {r['status']} | +{r['points']} | 剩{r['days']} | 总{r['points_total']} | {r['exchange']}"
+        response = session.request(
+            method,
+            url,
+            timeout=20,
+            **kwargs
         )
 
-    return title,"\n".join(lines)
+        if response.status_code != 200:
+            print(
+                f"[HTTP ERROR] "
+                f"{method} {url} -> {response.status_code}"
+            )
+            print(response.text[:500])
+            return None
 
-# ---------------- 主入口 ----------------
-def main():
+        return response
+
+    except requests.RequestException as e:
+        print(f"[NETWORK ERROR] {e}")
+        return None
+
+
+# ============================================================
+# Account Status
+# ============================================================
+
+def get_status(session):
+
+    response = request(
+        session,
+        "GET",
+        STATUS_URL
+    )
+
+    if response is None:
+        return None
 
     try:
-        sendkey, cookies, plan = load_config()
-        results=[]
+        data = response.json()
 
-        # 如果没有读取到有效的 cookies 列表，抛出异常
-        if not cookies:
-            raise ValueError("未设置有效的 GLADOS_COOKIES")
+        user = data.get("data", {})
 
-        # 遍历所有的 cookie 进行签到处理
-        for c in cookies:
-            s, p, d, tp, e = checkin_and_process(c, plan)
-            results.append({
-                "status": s,
-                "points": p,
-                "days": d,
-                "points_total": tp,
-                "exchange": e
-            })
+        email = user.get("email")
+        left_days = user.get("leftDays")
 
-        # 格式化推送内容
-        title, content = format_push(results)
+        if left_days is not None:
+            left_days = int(float(left_days))
+
+        return {
+            "email": email or "Unknown",
+            "left_days": left_days
+        }
 
     except Exception as e:
-        title = "脚本运行异常"
-        content = str(e)
+        print(f"[ERROR] 状态解析失败: {e}")
+        return None
 
-    # 输出日志
-    logger.info(f"推送标题: {title}")
-    logger.info(f"推送内容:\n{content}")
 
-    # 检查是否设置了 sendkey，如果设置了，发送推送
-    if sendkey:
-        send_ftqq(sendkey, title, content)
+# ============================================================
+# Points
+# ============================================================
+
+def get_points(session):
+
+    response = request(
+        session,
+        "GET",
+        POINTS_URL
+    )
+
+    if response is None:
+        return None
+
+    try:
+        data = response.json()
+
+        points = data.get("points")
+
+        if points is None:
+            return None
+
+        return int(float(points))
+
+    except Exception as e:
+        print(f"[ERROR] 积分解析失败: {e}")
+        return None
+
+
+# ============================================================
+# Check-in
+# ============================================================
+
+def do_checkin(session):
+
+    response = request(
+        session,
+        "POST",
+        CHECKIN_URL,
+        json=CHECKIN_DATA
+    )
+
+    if response is None:
+        return {
+            "status": "failure",
+            "message": "签到接口请求失败",
+            "points": 0
+        }
+
+    try:
+        data = response.json()
+
+    except Exception:
+        return {
+            "status": "failure",
+            "message": "签到接口返回非 JSON 数据",
+            "points": 0
+        }
+
+    code = data.get("code", -2)
+    message = str(data.get("message", ""))
+    points = data.get("points", 0)
+
+    try:
+        points = int(float(points))
+    except (TypeError, ValueError):
+        points = 0
+
+    message_lower = message.lower()
+
+    # 当前 API 通常 code = 0 表示签到成功
+    if code == 0:
+
+        return {
+            "status": "success",
+            "message": message,
+            "points": points
+        }
+
+    # 已签到
+    if (
+        "repeat" in message_lower
+        or "already" in message_lower
+        or "tomorrow" in message_lower
+    ):
+
+        return {
+            "status": "repeat",
+            "message": message,
+            "points": points
+        }
+
+    return {
+        "status": "failure",
+        "message": message or f"未知错误 code={code}",
+        "points": 0
+    }
+
+
+# ============================================================
+# One account
+# ============================================================
+
+def process_account(cookie, index):
+
+    session = requests.Session()
+
+    session.headers.update(HEADERS)
+
+    # 不把 Cookie 输出到日志
+    session.headers.update({
+        "Cookie": cookie
+    })
+
+    print()
+    print("=" * 60)
+    print(f"账号 {index}")
+    print("=" * 60)
+
+    # 先验证 Cookie
+    old_status = get_status(session)
+
+    if old_status is None:
+
+        print("❌ Cookie 无效或账户状态获取失败")
+
+        return {
+            "index": index,
+            "email": "Unknown",
+            "status": "failure",
+            "message": "Cookie 无效或登录状态失效",
+            "points": 0,
+            "total_points": None,
+            "left_days": None
+        }
+
+    email = old_status["email"]
+
+    print(f"账号: {email}")
+
+    # 签到
+    result = do_checkin(session)
+
+    # 签到以后重新查询状态
+    new_status = get_status(session)
+
+    total_points = get_points(session)
+
+    left_days = None
+
+    if new_status:
+        left_days = new_status["left_days"]
+
+    if result["status"] == "success":
+
+        print("✅ 签到成功")
+        print(f"本次积分: +{result['points']}")
+
+    elif result["status"] == "repeat":
+
+        print("🔄 今日已经签到")
+
     else:
-        logger.warning("未设置 'WECHAT_NOTIFY'，跳过推送。")
+
+        print("❌ 签到失败")
+        print(f"原因: {result['message']}")
+
+    if left_days is not None:
+        print(f"剩余天数: {left_days} 天")
+
+    if total_points is not None:
+        print(f"总积分: {total_points}")
+
+    return {
+        "index": index,
+        "email": email,
+        "status": result["status"],
+        "message": result["message"],
+        "points": result["points"],
+        "total_points": total_points,
+        "left_days": left_days
+    }
+
+
+# ============================================================
+# ServerChan / 方糖
+# ============================================================
+
+def get_serverchan_url(sendkey):
+
+    """
+    Server酱 Turbo:
+        SCTxxxxxxxx
+        https://sctapi.ftqq.com/{SENDKEY}.send
+
+    Server酱³:
+        sctp123tXXXX
+        https://123.push.ft07.com/send/{SENDKEY}.send
+    """
+
+    if sendkey.lower().startswith("sctp"):
+
+        try:
+            uid_part = sendkey[4:].split("t", 1)[0]
+
+            if uid_part.isdigit():
+                return (
+                    f"https://{uid_part}.push.ft07.com/"
+                    f"send/{sendkey}.send"
+                )
+
+        except Exception:
+            pass
+
+        raise ValueError("无法解析 Server酱³ SendKey")
+
+    return f"https://sctapi.ftqq.com/{sendkey}.send"
+
+
+def send_serverchan(title, content):
+
+    sendkey = os.environ.get(
+        "SERVERCHAN_SENDKEY",
+        ""
+    ).strip()
+
+    if not sendkey:
+        print("⚠️ 未设置 SERVERCHAN_SENDKEY，跳过微信通知")
+        return False
+
+    try:
+
+        url = get_serverchan_url(sendkey)
+
+        response = requests.post(
+            url,
+            data={
+                "title": title[:32],
+                "desp": content
+            },
+            timeout=20
+        )
+
+        data = response.json()
+
+        if data.get("code") == 0:
+
+            print("✅ Server酱通知发送成功")
+            return True
+
+        print(
+            "❌ Server酱通知失败:",
+            data
+        )
+
+    except Exception as e:
+
+        print(
+            f"❌ Server酱通知异常: {e}"
+        )
+
+    return False
+
+
+# ============================================================
+# Message
+# ============================================================
+
+def build_message(results):
+
+    success = sum(
+        r["status"] == "success"
+        for r in results
+    )
+
+    repeat = sum(
+        r["status"] == "repeat"
+        for r in results
+    )
+
+    failure = sum(
+        r["status"] == "failure"
+        for r in results
+    )
+
+    if failure > 0:
+
+        icon = "❌"
+
+    elif success > 0:
+
+        icon = "✅"
+
+    else:
+
+        icon = "🔄"
+
+    title = (
+        f"{icon} GLaDOS签到 "
+        f"成功{success} 重复{repeat} 失败{failure}"
+    )
+
+    lines = []
+
+    lines.append("# GLaDOS 自动签到")
+    lines.append("")
+
+    china_tz = timezone(
+        timedelta(hours=8)
+    )
+
+    now = datetime.now(
+        china_tz
+    ).strftime("%Y-%m-%d %H:%M:%S")
+
+    lines.append(
+        f"**时间：** {now}"
+    )
+
+    lines.append("")
+
+    for result in results:
+
+        index = result["index"]
+
+        if result["status"] == "success":
+
+            status_text = "✅ 签到成功"
+
+        elif result["status"] == "repeat":
+
+            status_text = "🔄 今日已签到"
+
+        else:
+
+            status_text = "❌ 签到失败"
+
+        lines.append(
+            f"## 账号 {index}"
+        )
+
+        lines.append("")
+
+        lines.append(
+            f"- **账号：** {result['email']}"
+        )
+
+        lines.append(
+            f"- **状态：** {status_text}"
+        )
+
+        if result["status"] == "success":
+
+            lines.append(
+                f"- **签到积分：** +{result['points']}"
+            )
+
+        if result["left_days"] is not None:
+
+            lines.append(
+                f"- **剩余天数：** "
+                f"{result['left_days']} 天"
+            )
+
+        if result["total_points"] is not None:
+
+            lines.append(
+                f"- **总积分：** "
+                f"{result['total_points']}"
+            )
+
+        if result["status"] == "failure":
+
+            lines.append(
+                f"- **原因：** "
+                f"{result['message']}"
+            )
+
+        lines.append("")
+
+    lines.append("---")
+    lines.append("GitHub Actions · GLaDOS Check-in")
+
+    content = "\n".join(lines)
+
+    return title, content
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+
+    raw_cookies = os.environ.get(
+        "GLADOS_COOKIES",
+        ""
+    ).strip()
+
+    if not raw_cookies:
+
+        title = "❌ GLaDOS签到失败"
+
+        content = (
+            "# GLaDOS 自动签到\n\n"
+            "未找到 `GLADOS_COOKIES`。"
+        )
+
+        print("❌ 未设置 GLADOS_COOKIES")
+
+        send_serverchan(
+            title,
+            content
+        )
+
+        sys.exit(1)
+
+    cookies = [
+        item.strip()
+        for item in raw_cookies.split("&")
+        if item.strip()
+    ]
+
+    print(
+        f"共加载 {len(cookies)} 个账号"
+    )
+
+    results = []
+
+    for index, cookie in enumerate(
+        cookies,
+        start=1
+    ):
+
+        result = process_account(
+            cookie,
+            index
+        )
+
+        results.append(result)
+
+    title, content = build_message(
+        results
+    )
+
+    print()
+    print("=" * 60)
+    print(title)
+    print("=" * 60)
+
+    for r in results:
+
+        print(
+            f"#{r['index']} "
+            f"{r['email']} | "
+            f"{r['status']} | "
+            f"P:+{r['points']} | "
+            f"剩余:{r['left_days']} | "
+            f"总积分:{r['total_points']}"
+        )
+
+    # 每次任务只推送一次
+    send_serverchan(
+        title,
+        content
+    )
+
+    # 有真正失败账号时让 GitHub Actions 标红
+    if any(
+        r["status"] == "failure"
+        for r in results
+    ):
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
-
