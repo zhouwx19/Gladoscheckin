@@ -26,5 +26,5 @@ jobs:
       - name: Run GLaDOS Check-in
         env:
           GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
-          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          SERVERCHAN_SENDKEY: ${{ secrets.WECHAT_NOTIFY }}
         run: python checkin.py
