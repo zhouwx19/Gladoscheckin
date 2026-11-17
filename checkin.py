@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 # Configuration
 # ============================================================
 
-DOMAIN = "glados.network"
+DOMAIN = "glados.rocks"
 
 BASE_URL = f"https://{DOMAIN}"
 
